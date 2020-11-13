@@ -17,6 +17,7 @@ public class SwiftFlutterUploaderPlugin: NSObject, FlutterPlugin, URLSessionTask
     static let KEY_SAVED_DIR = "savedDir"
     static let STEP_UPDATE = 0
     static let DEFAULT_TIMEOUT = 3600.0
+    static let lock = NSLock()
 
     enum UploadTaskStatus: Int {
         case undefined = 0, enqueue, running, completed, failed, canceled, paused
@@ -165,8 +166,10 @@ public class SwiftFlutterUploaderPlugin: NSObject, FlutterPlugin, URLSessionTask
             } else {
                 let uploadTask = task!
                 let taskId = self.identifierForTask(uploadTask)
+                SwiftFlutterUploaderPlugin.lock.lock()
                 self.runningTaskById[taskId] = UploadTask(taskId: taskId, status: .enqueue, progress: 0, tag: tag)
                 result(taskId)
+                SwiftFlutterUploaderPlugin.lock.unlock()
                 self.sendUpdateProgressForTaskId(taskId, inStatus: .enqueue, andProgress: 0, andTag: tag)
             }
         })
@@ -216,7 +219,9 @@ public class SwiftFlutterUploaderPlugin: NSObject, FlutterPlugin, URLSessionTask
             } else {
                 let uploadTask = task!
                 let taskId = self.identifierForTask(uploadTask)
+                SwiftFlutterUploaderPlugin.lock.lock()
                 self.runningTaskById[taskId] = UploadTask(taskId: taskId, status: .enqueue, progress: 0, tag: tag)
+                SwiftFlutterUploaderPlugin.lock.unlock()
                 result(taskId)
                 self.sendUpdateProgressForTaskId(taskId, inStatus: .enqueue, andProgress: 0, andTag: tag)
             }
@@ -442,7 +447,9 @@ public class SwiftFlutterUploaderPlugin: NSObject, FlutterPlugin, URLSessionTask
         }
 
         let taskId = identifierForTask(uploadTask, withSession: session)
+        SwiftFlutterUploaderPlugin.lock.lock()
         let runningTask = self.runningTaskById[taskId]
+        SwiftFlutterUploaderPlugin.lock.unlock()
         let tag = runningTask?.tag
 
         if error != nil {
@@ -456,8 +463,10 @@ public class SwiftFlutterUploaderPlugin: NSObject, FlutterPlugin, URLSessionTask
             }
 
             self.sendUploadFailedForTaskId(taskId, inStatus: uploadStatus, statusCode: 500, error: FlutterError(code: "upload_error", message: error?.localizedDescription, details: Thread.callStackSymbols), tag: tag)
+            SwiftFlutterUploaderPlugin.lock.lock()
             self.runningTaskById.removeValue(forKey: taskId)
             self.uploadedData.removeValue(forKey: taskId)
+            SwiftFlutterUploaderPlugin.lock.unlock()
             return
         }
 
@@ -513,8 +522,10 @@ public class SwiftFlutterUploaderPlugin: NSObject, FlutterPlugin, URLSessionTask
             }
         }
 
+        SwiftFlutterUploaderPlugin.lock.lock()
         self.uploadedData.removeValue(forKey: taskId)
         self.runningTaskById.removeValue(forKey: taskId)
+        SwiftFlutterUploaderPlugin.lock.unlock()
 
         let dataString = String(data: data, encoding: String.Encoding.utf8)
         let message = dataString == nil ? "" : dataString!
@@ -563,7 +574,9 @@ public class SwiftFlutterUploaderPlugin: NSObject, FlutterPlugin, URLSessionTask
         }) {
             NSLog("URLSessionDidReceiveData: existing data with \(taskId)")
             if data.count > 0 {
+                SwiftFlutterUploaderPlugin.lock.lock()
                 self.uploadedData[taskId]?.append(data)
+                SwiftFlutterUploaderPlugin.lock.unlock()
             }
         } else {
             var udata = Data()
@@ -571,7 +584,9 @@ public class SwiftFlutterUploaderPlugin: NSObject, FlutterPlugin, URLSessionTask
                 udata.append(data)
             }
 
+            SwiftFlutterUploaderPlugin.lock.lock()
             self.uploadedData[taskId] = udata
+            SwiftFlutterUploaderPlugin.lock.unlock()
         }
     }
 
@@ -602,7 +617,9 @@ public class SwiftFlutterUploaderPlugin: NSObject, FlutterPlugin, URLSessionTask
             let bytesExpectedToSend = Double(integerLiteral: totalBytesExpectedToSend)
             let tBytesSent = Double(integerLiteral: totalBytesSent)
             let progress = round(Double(tBytesSent / bytesExpectedToSend * 100))
+            SwiftFlutterUploaderPlugin.lock.lock()
             let runningTask = self.runningTaskById[taskId]
+            SwiftFlutterUploaderPlugin.lock.unlock()
             NSLog("URLSessionDidSendBodyData: taskId: \(taskId), byteSent: \(bytesSent), totalBytesSent: \(totalBytesSent), totalBytesExpectedToSend: \(totalBytesExpectedToSend), progress:\(progress)")
 
             if runningTask != nil {
@@ -614,7 +631,9 @@ public class SwiftFlutterUploaderPlugin: NSObject, FlutterPlugin, URLSessionTask
 
                 if isRunning(Int(progress), runningTask!.progress, SwiftFlutterUploaderPlugin.STEP_UPDATE) {
                     self.sendUpdateProgressForTaskId(taskId, inStatus: .running, andProgress: Int(progress), andTag: runningTask?.tag)
+                    SwiftFlutterUploaderPlugin.lock.lock()
                     self.runningTaskById[taskId] = UploadTask(taskId: taskId, status: .running, progress: Int(progress), tag: runningTask?.tag)
+                    SwiftFlutterUploaderPlugin.lock.unlock()
                 }
             }
         }
